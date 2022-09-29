@@ -28,7 +28,7 @@ synchronous() {
 }
 
 main() {
-  # time synchronous
+  time synchronous
 
   echo
   echo
