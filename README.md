@@ -39,8 +39,9 @@ sys	0m0.043s
 2. **01-example-functools.bash**
 
 ```sh
-[DEBUG] __PIPE_PREFIX: __bash_92441_pipe
-[DEBUG] using file /var/folders/pq/xv5hx2d117jfxls2nx49wgrm0000gn/T/bash_92441__func_returnsXXXXXXXXXX.y7HB1X23 for synchronous communication in pid 92441
+[DEBUG] __PREFIX: functools_example
+[DEBUG] __PIPE_PREFIX: __functools_example_pipe
+[DEBUG] using file /var/folders/pq/xv5hx2d117jfxls2nx49wgrm0000gn/T/functools_example__func_returnsXXXXXXXXXX.FONMWnYC for synchronous communication in pid 92774
 [DEBUG] executing foo
 out: {"tag": "v12.87.3"}
 ```

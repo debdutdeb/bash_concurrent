@@ -2,7 +2,7 @@
 
 source "./multiprocess.bash"
 
-concurrency_init "functools_example"
+concurrency_init -p "functools_example"
 
 foo() {
   DEBUG "executing foo"
