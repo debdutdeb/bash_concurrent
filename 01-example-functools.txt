@@ -1,5 +1,5 @@
 [DEBUG] __PREFIX: functools_example
 [DEBUG] __PIPE_PREFIX: __functools_example_pipe
-[DEBUG] using file /var/folders/pq/xv5hx2d117jfxls2nx49wgrm0000gn/T/functools_example__func_returnsXXXXXXXXXX.FONMWnYC for synchronous communication in pid 92774
+[DEBUG] using file /var/folders/pq/xv5hx2d117jfxls2nx49wgrm0000gn/T/functools_example__func_returnsXXXXXXXXXX.sA8TVaY8 for synchronous communication in pid 94419
 [DEBUG] executing foo
 out: {"tag": "v12.87.3"}

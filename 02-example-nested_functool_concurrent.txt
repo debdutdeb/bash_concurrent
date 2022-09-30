@@ -1,54 +1,3 @@
-# bash_concurrent
-concurrency in bash scripts
-
-## Examples
-
-1. **00-example-basic-multitasking.bash**
-
-```sh
-[DEBUG] __PIPE_PREFIX: __bash_94433_pipe
-[DEBUG] using file /var/folders/pq/xv5hx2d117jfxls2nx49wgrm0000gn/T/bash_94433__func_returnsXXXXXXXXXX.dmJ75fQk for synchronous communication in pid 94433
-{"tag": "4.3.1"}
-{"CVE": "1343-HGt"}
-
-real	0m19.992s
-user	0m0.004s
-sys	0m0.011s
-
-
-[DEBUG] creating background job with id 0
-[DEBUG] creating background job with id 1
-[DEBUG] using file /var/folders/pq/xv5hx2d117jfxls2nx49wgrm0000gn/T/bash_94433__func_returnsXXXXXXXXXX.jo5Lv7fx for synchronous communication in pid 94450
-[DEBUG] starting background task 0
-[DEBUG] reading from pipe /tmp/__bash_94433_pipe_21207
-[DEBUG] using file /var/folders/pq/xv5hx2d117jfxls2nx49wgrm0000gn/T/bash_94433__func_returnsXXXXXXXXXX.ssk2T3eB for synchronous communication in pid 94460
-[DEBUG] starting background task 1
-[DEBUG] background task 0 completed
-[DEBUG] flushing pipe id from memory
-{"tag": "4.3.1"}
-[DEBUG] reading from pipe /tmp/__bash_94433_pipe_18947
-[DEBUG] background task 1 completed
-[DEBUG] flushing pipe id from memory
-{"CVE": "1343-HGt"}
-
-real	0m10.045s
-user	0m0.018s
-sys	0m0.045s
-```
-
-2. **01-example-functools.bash**
-
-```sh
-[DEBUG] __PREFIX: functools_example
-[DEBUG] __PIPE_PREFIX: __functools_example_pipe
-[DEBUG] using file /var/folders/pq/xv5hx2d117jfxls2nx49wgrm0000gn/T/functools_example__func_returnsXXXXXXXXXX.sA8TVaY8 for synchronous communication in pid 94419
-[DEBUG] executing foo
-out: {"tag": "v12.87.3"}
-```
-
-3. **02-example-nested_functool_concurrent.txt**
-
-```sh
 [DEBUG] __PREFIX: nested_functool_with_multitasking
 [DEBUG] __PIPE_PREFIX: __nested_functool_with_multitasking_pipe
 [DEBUG] using file /var/folders/pq/xv5hx2d117jfxls2nx49wgrm0000gn/T/nested_functool_with_multitasking__func_returnsXXXXXXXXXX.rzWiP2sa for synchronous communication in pid 94486
@@ -92,4 +41,3 @@ foo 94486 bar 94486 baz 94486
 [DEBUG] background task 3 completed
 [DEBUG] flushing pipe id from memory
 foo 94486 bar 94486 baz 94486
-```

@@ -100,7 +100,7 @@ background_execute() {
     unset "__pipes[$id]"
   }
 
-  (
+  ( 
     __initialize_synchronous_communication
     __do "$@"
   ) &
@@ -128,7 +128,7 @@ __initialize_synchronous_communication() {
     exit 100
   fi
 
-  DEBUG "using file $__func_returns for synchronous communication in pid $$"
+  DEBUG "using file $__func_returns for synchronous communication in pid $BASHPID"
 
   exec 3> "$__func_returns"
   exec 4>&1
