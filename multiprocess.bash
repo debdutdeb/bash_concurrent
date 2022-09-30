@@ -106,6 +106,7 @@ background_execute() {
     __initialize_synchronous_communication
     __do "$@"
   ) &
+  funcreturn "$!"
 }
 
 background_read() {
