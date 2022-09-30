@@ -60,7 +60,7 @@ atexit() {
   done
 }
 
-background_execute() {
+subprocess_popen() {
   local \
     OPTARG \
     OPTIND \
@@ -109,7 +109,7 @@ background_execute() {
   funcreturn "$!"
 }
 
-background_read() {
+subprocess_pread() {
   local id="${1?job id required}"
   if ! is "$id" in __pipes; then
     ERROR "unknown background task id $id"
