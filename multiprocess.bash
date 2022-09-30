@@ -92,6 +92,8 @@ background_execute() {
   atexit "${__cleanup_funcname}" EXIT SIGINT
 
   __do() {
+    # reset getopts
+    OPTIND=1
     DEBUG "starting background task $id"
     printf "%s" "$(funcrun "$@")" > "${__pipes[$id]}"
     DEBUG "background task $id completed"
