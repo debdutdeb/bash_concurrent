@@ -214,7 +214,7 @@ subprocess_popen() {
   funcreturn "$subprocess_pid"
 }
 
-subprocess_pread() {
+subprocess_read() {
   local \
     id \
     pid
