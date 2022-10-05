@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+shopt -s expand_aliases
+
 {
   if ! command &> /dev/null -v DEBUG; then
     DEBUG() {
@@ -12,6 +14,42 @@
       printf "[ERROR] %s\n" "$*" >&2
     }
   fi
+}
+
+__do_create_temporary_file() {
+  local \
+    OPTARG \
+    _opt \
+    _cmd_args=(mktemp -p "${TMPDIR:-/tmp}")
+
+  OPTIND=1
+  while getopts "s:p:" _opt; do
+    if [[ "$_opt" == "s" ]]; then
+      _cmd_args+=("--suffix=$OPTARG")
+      continue
+    fi
+    if [[ "$_opt" == "p" ]]; then
+      _cmd_args+=("${OPTARG}XXXXX")
+      continue
+    fi
+  done
+
+  funcreturn "$("${_cmd_args[@]}")"
+}
+
+__create_temporary_file() {
+  local _prefix_arg=(${1+-p $1})
+  __do_create_temporary_file "${_prefix_arg[@]}"
+}
+
+__create_named_pipe() {
+  local \
+    _file_name \
+    _prefix_arg=(${1+-p $1})
+  _file_name="$(funcrun __do_create_temporary_file  "${_prefix_arg[@]}" -s ".fifo")"
+  rm -f "$_file_name" >&2
+  mkfifo "$_file_name"
+  funcreturn "$_file_name"
 }
 
 funcreturn() {
@@ -33,7 +71,7 @@ is() {
   [[ -v $check ]]
 }
 
-atexit() {
+__run_on_signal() {
   local command="${1?trap command required}"
 
   shift
@@ -60,13 +98,76 @@ atexit() {
   done
 }
 
+__exit_at_failure() {
+  # @descrition exit the whole program if this process fails
+  local exit_code="$?"
+
+  DEBUG "${__JOB_ID}::${BASHPID}::EXIT_CODE $exit_code"
+  [[ "$exit_code" -eq 0 ]] && return
+
+  DEBUG "non-zero exit code detected $exit_code"
+  DEBUG "killing all child pids"
+
+  while :; do ((__EXIT_HANDLER_PID_LOCK == 0)) && break; done
+  true > "$__EXIT_HANDLER_TRIGGER_FIFO"
+}
+
+alias exit_at_failure='DEBUG "registering exit function action for jobid $id pid: $BASHPID"; trap "__exit_at_failure" RETURN EXIT'
+
+__restart_exit_at_failure_handler() {
+  __EXIT_HANDLER_PID_LOCK=1
+
+  local pid
+
+  [[ -f "$__EXIT_HANDLER_PID_FILE" ]] && read -r pid < "$__EXIT_HANDLER_PID_FILE"
+  if [[ -n "$pid" ]]; then
+    DEBUG "existing exit handler running on pid $pid"
+    DEBUG "killing exit handler pid $pid"
+    kill -SIGTERM "$pid"
+  fi
+
+  __do_restart_exit_at_failure_handler() {
+    read -r < "$__EXIT_HANDLER_TRIGGER_FIFO" # block until something is written to the pipe
+    kill -SIGTERM -- "-$$"
+  }
+
+  __do_restart_exit_at_failure_handler &
+  pid="$!"
+
+  DEBUG "new exit handler pid $pid"
+  printf "%s" "$pid" > "$__EXIT_HANDLER_PID_FILE"
+
+  __EXIT_HANDLER_PID_LOCK=0
+}
+
+__cleanup_file_after_exit() {
+  local \
+    __file \
+    __cleanup_funcname
+  __file="${1?file required}"
+  __cleanup_funcname="__cleanup_$RANDOM"
+  eval "${__cleanup_funcname}() { DEBUG 'cleaning up file ${__file}'; rm -f '${__file}'; }"
+  __run_on_signal "${__cleanup_funcname}" EXIT SIGINT SIGTERM
+}
+
+__cleanup_pipe_after_exit() {
+  local \
+    id
+
+  id="${1?job id required}"
+  __cleanup_file_after_exit "${__pipes["$id"]}"
+  __run_on_signal "unset __pipes[$id]" EXIT SIGINT SIGTERM
+}
+
 subprocess_popen() {
   local \
     OPTARG \
     OPTIND \
     _opt \
-    id
+    id \
+    _sync_file
 
+  OPTIND=1
   while getopts "j:" _opt; do
     case "$_opt" in
       j)
@@ -84,12 +185,10 @@ subprocess_popen() {
     return
   fi
 
-  __pipes["$id"]="/tmp/${__PIPE_PREFIX}_$RANDOM"
-  mkfifo "${__pipes[$id]}"
+  __pipes["$id"]="$(funcrun __create_named_pipe "${__PIPE_PREFIX}_$RANDOM")"
+  DEBUG "using named pipe for job id $id ${__pipes["$id"]}"
 
-  local __cleanup_funcname="__cleanup_$RANDOM"
-  eval "${__cleanup_funcname}() { rm -f ${__pipes["$id"]}; }"
-  atexit "${__cleanup_funcname}" EXIT SIGINT
+  __cleanup_pipe_after_exit "$id"
 
   __do() {
     # reset getopts
@@ -97,20 +196,31 @@ subprocess_popen() {
     DEBUG "starting background task $id"
     printf "%s" "$(funcrun "$@")" > "${__pipes[$id]}"
     DEBUG "background task $id completed"
-
-    DEBUG "flushing pipe id from memory"
-    unset "__pipes[$id]"
   }
 
+  sync_file="$(funcrun __create_temporary_file "${__PREFIX}_func_returns")"
+  __cleanup_file_after_exit "$sync_file"
   ( 
-    __initialize_synchronous_communication
+    __JOB_ID="$id"
+    __initialize_synchronous_communication "$sync_file"
     __do "$@"
   ) &
-  funcreturn "$!"
+  local subprocess_pid="$!"
+
+  DEBUG "subprocess opened pid $subprocess_pid"
+
+  __restart_exit_at_failure_handler
+
+  funcreturn "$subprocess_pid"
 }
 
 subprocess_pread() {
-  local id="${1?job id required}"
+  local \
+    id \
+    pid
+
+  id="${1?job id required}"
+
   if ! is "$id" in __pipes; then
     ERROR "unknown background task id $id"
     return
@@ -122,22 +232,28 @@ subprocess_pread() {
   }
 
   funcrun __do
+
+  DEBUG "flushing job id from memory"
+  unset "__pipes[$id]"
 }
 
 __initialize_synchronous_communication() {
   # shellcheck disable=2155
-  if ! declare -g __func_returns="$(mktemp -t "${__PREFIX}"__func_returnsXXXXXXXXXX)"; then
+  if ! declare -g __func_returns="${1:-$(mktemp "${__PREFIX}"__func_returnsXXXXX -p "${TMPDIR:-/tmp}")}"; then
     FATAL "failed to pipe function output"
     exit 100
   fi
 
   DEBUG "using file $__func_returns for synchronous communication in pid $BASHPID"
 
+  # __cleanup_file_after_exit "$__func_returns"
+
   exec 3> "$__func_returns"
   exec 4>&1
 }
 
 concurrency_init() {
+
   local \
     OPTARG \
     OPTIND \
@@ -145,6 +261,7 @@ concurrency_init() {
 
   declare -g __PREFIX
 
+  OPTIND=1
   while getopts "p:" _opt; do
     case "$_opt" in
       p)
@@ -156,11 +273,26 @@ concurrency_init() {
     esac
   done
 
-  declare -gA __pipes=()
   declare -g __PIPE_PREFIX=
 
   __PIPE_PREFIX="__${__PREFIX:=bash_$$}_pipe"
   DEBUG "__PIPE_PREFIX: $__PIPE_PREFIX"
 
   __initialize_synchronous_communication
+
+  declare -xgA __pipes=()
+
+  declare -xg __EXIT_HANDLER_PID=
+  declare -xg __EXIT_HANDLER_PID_LOCK=0
+
+  declare -xg __EXIT_HANDLER_SUBPROCESS_ID="__exit_handler_subprocess_id_$RANDOM"
+  DEBUG "__EXIT_HANDLER_SUBPROCESS_ID: $__EXIT_HANDLER_SUBPROCESS_ID"
+  declare -xg __EXIT_HANDLER_PID_FILE="$(funcrun __do_create_temporary_file -p "${__EXIT_HANDLER_SUBPROCESS_ID}" -s .pid)"
+  DEBUG "__EXIT_HANDLER_PID_FILE: $__EXIT_HANDLER_PID_FILE"
+
+  declare -xg __EXIT_HANDLER_TRIGGER_FIFO="$(funcrun __create_named_pipe "${__EXIT_HANDLER_SUBPROCESS_ID}")"
+  DEBUG "__EXIT_HANDLER_TRIGGER_FIFO: $__EXIT_HANDLER_TRIGGER_FIFO"
+
+  __cleanup_file_after_exit "$__EXIT_HANDLER_TRIGGER_FIFO"
+  __cleanup_file_after_exit "$__EXIT_HANDLER_PID_FILE"
 }
