@@ -14,6 +14,12 @@ shopt -s expand_aliases
       printf "[ERROR] %s\n" "$*" >&2
     }
   fi
+
+  if ! command &> /dev/null -v FATAL; then
+    FATAL() {
+      printf "[ERROR] %s\n" "$*" >&2
+    }
+  fi
 }
 
 __do_create_temporary_file() {
@@ -114,10 +120,32 @@ __exit_at_failure() {
 
 alias exit_at_failure='DEBUG "registering exit function action for jobid $id pid: $BASHPID"; trap "__exit_at_failure" RETURN EXIT'
 
+__kill_handler_if_no_subprocess() {
+  local \
+    subprocess_pid \
+    subprocess_pids=($(jobs -p)) \
+    managed_subprocess_pid \
+    handler_pid
+
+  read < "$__EXIT_HANDLER_PID_FILE" -r handler_pid
+  DEBUG "killing exit handler pid $handler_pid before exiting program"
+  [[ -d "/proc/$handler_pid" ]] || return
+
+  # if at least one subprocess is still running (owned by this script)
+  # don't kill the handler
+  for managed_subprocess_pid in "${__pids[@]}"; do
+    for subprocess_pid in "${subprocess_pids[@]}"; do
+      [[ "$subprocess_pid" == "$managed_subprocess_pid" ]] && return
+    done
+  done
+
+  kill -SIGTERM "$handler_pid"
+}
+
 __restart_exit_at_failure_handler() {
   __EXIT_HANDLER_PID_LOCK=1
 
-  local pid
+  local pid pipe
 
   [[ -f "$__EXIT_HANDLER_PID_FILE" ]] && read -r pid < "$__EXIT_HANDLER_PID_FILE"
   if [[ -n "$pid" ]]; then
@@ -128,6 +156,9 @@ __restart_exit_at_failure_handler() {
 
   __do_restart_exit_at_failure_handler() {
     read -r < "$__EXIT_HANDLER_TRIGGER_FIFO" # block until something is written to the pipe
+    for pipe in "${__pipes[@]}"; do
+      true > "$pipe" &
+    done
     kill -SIGTERM -- "-$$"
   }
 
@@ -136,6 +167,8 @@ __restart_exit_at_failure_handler() {
 
   DEBUG "new exit handler pid $pid"
   printf "%s" "$pid" > "$__EXIT_HANDLER_PID_FILE"
+
+  __run_on_signal "wait $pid" EXIT
 
   __EXIT_HANDLER_PID_LOCK=0
 }
@@ -147,7 +180,7 @@ __cleanup_file_after_exit() {
   __file="${1?file required}"
   __cleanup_funcname="__cleanup_$RANDOM"
   eval "${__cleanup_funcname}() { DEBUG 'cleaning up file ${__file}'; rm -f '${__file}'; }"
-  __run_on_signal "${__cleanup_funcname}" EXIT SIGINT SIGTERM
+  __run_on_signal "${__cleanup_funcname}" 0
 }
 
 __cleanup_pipe_after_exit() {
@@ -156,7 +189,7 @@ __cleanup_pipe_after_exit() {
 
   id="${1?job id required}"
   __cleanup_file_after_exit "${__pipes["$id"]}"
-  __run_on_signal "unset __pipes[$id]" EXIT SIGINT SIGTERM
+  __run_on_signal "unset __pipes[$id]" 0
 }
 
 subprocess_popen() {
@@ -206,6 +239,7 @@ subprocess_popen() {
     __do "$@"
   ) &
   local subprocess_pid="$!"
+  __pids["$id"]="$subprocess_pid"
 
   DEBUG "subprocess opened pid $subprocess_pid"
 
@@ -246,7 +280,7 @@ __initialize_synchronous_communication() {
 
   DEBUG "using file $__func_returns for synchronous communication in pid $BASHPID"
 
-  # __cleanup_file_after_exit "$__func_returns"
+  [[ -z "$1" ]] && __cleanup_file_after_exit "$__func_returns"
 
   exec 3> "$__func_returns"
   exec 4>&1
@@ -281,6 +315,7 @@ concurrency_init() {
   __initialize_synchronous_communication
 
   declare -xgA __pipes=()
+  declare -xgA __pids=()
 
   declare -xg __EXIT_HANDLER_PID=
   declare -xg __EXIT_HANDLER_PID_LOCK=0
@@ -292,6 +327,8 @@ concurrency_init() {
 
   declare -xg __EXIT_HANDLER_TRIGGER_FIFO="$(funcrun __create_named_pipe "${__EXIT_HANDLER_SUBPROCESS_ID}")"
   DEBUG "__EXIT_HANDLER_TRIGGER_FIFO: $__EXIT_HANDLER_TRIGGER_FIFO"
+
+  __run_on_signal "__kill_handler_if_no_subprocess" EXIT
 
   __cleanup_file_after_exit "$__EXIT_HANDLER_TRIGGER_FIFO"
   __cleanup_file_after_exit "$__EXIT_HANDLER_PID_FILE"
